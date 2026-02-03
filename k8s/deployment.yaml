@@ -1,0 +1,52 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: processing-worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: processing-worker
+  template:
+    metadata:
+      labels:
+        app: processing-worker
+    spec:
+      serviceAccountName: worker-sa # Created via Terraform/CLI with Workload Identity
+      containers:
+      - name: worker
+        image: gcr.io/YOUR_PROJECT_ID/processing-worker:latest
+        imagePullPolicy: Always
+        env:
+        - name: GOOGLE_CLOUD_PROJECT
+          value: "your-project-id"
+        - name: PUBSUB_SUBSCRIPTION
+          value: "telemetry-sub"
+        - name: GCS_BUCKET
+          value: "your-bucket-name"
+        - name: DB_USER
+          valueFrom:
+            secretKeyRef:
+              name: db-secrets
+              key: username
+        - name: DB_PASS
+          valueFrom:
+            secretKeyRef:
+              name: db-secrets
+              key: password
+        - name: DB_NAME
+          value: "iot_db"
+        # Using Cloud SQL Auth Proxy Sidecar Pattern is recommended, or Private IP
+        # For simplicity here, we assume Private IP or simple proxy sidecar below
+        - name: DB_HOST
+          value: "127.0.0.1" 
+
+      # Cloud SQL Proxy Sidecar (Recommended for secure public/private connection)
+      - name: cloud-sql-proxy
+        image: gcr.io/cloudsql-docker/gce-proxy:1.33.2
+        command:
+          - "/cloud_sql_proxy"
+          - "-instances=YOUR_PROJECT_ID:REGION:INSTANCE_NAME=tcp:5432"
+          # - "-credential_file=/secrets/key.json" # If not using Workload Identity
+        securityContext:
+          runAsNonRoot: true
